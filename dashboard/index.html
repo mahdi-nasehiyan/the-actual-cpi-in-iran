@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Actual CPI in Iran</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #f4f2ee;
+            --card: #ffffff;
+            --border: #e0dcd5;
+            --text: #1a1a1a;
+            --muted: #8a8580;
+            --accent: #c0392b;
+            --accent2: #2c6e49;
+            --shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+            --radius: 12px;
+            --font-fa: 'Vazirmatn', sans-serif;
+            --font-en: 'Inter', -apple-system, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-en);
+            background: var(--bg);
+            color: var(--text);
+            padding: 32px 24px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* ── Header ── */
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-family: var(--font-fa);
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+        }
+
+        .header .subtitle {
+            font-size: 15px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        /* ── Meta row ── */
+        .meta-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+
+        .meta-card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 12px 18px;
+            box-shadow: var(--shadow);
+            font-size: 13px;
+            flex: 0 0 auto;
+        }
+
+        .meta-card .num {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--text);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .meta-card .label {
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        /* ── Controls ── */
+        .controls {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .control-group select {
+            padding: 6px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: var(--font-fa);
+            background: #fff;
+            cursor: pointer;
+            min-width: 120px;
+        }
+
+        .control-group select option {
+            font-family: var(--font-fa);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .checkbox-group input {
+            cursor: pointer;
+        }
+
+        /* ── Chart ── */
+        .chart-wrap {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .chart-wrap canvas {
+            width: 100%;
+            height: 480px;
+        }
+
+        /* ── Footer ── */
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .footer a {
+            color: var(--muted);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            color: var(--text);
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>نماگر قیمت مصرف‌کننده در ایران</h1>
+            <div class="subtitle">The Actual CPI in Iran — real price movements from Torob data</div>
+        </div>
+
+        <div class="meta-row" id="meta-row"></div>
+
+        <div class="controls" id="controls">
+            <div class="control-group">
+                <label>L1</label>
+                <select id="l1-select">
+                    <option>Loading...</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>L2</label>
+                <select id="l2-select">
+                    <option value="__all__">همه</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>L3</label>
+                <select id="l3-select">
+                    <option value="__all__">همه</option>
+                </select>
+            </div>
+            <div style="flex:1"></div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="show-overall" checked>
+                <label for="show-overall">Show overall index</label>
+            </div>
+            <div class="control-group">
+                <label>Base</label>
+                <select id="base-select"></select>
+            </div>
+        </div>
+
+        <div class="chart-wrap">
+            <canvas id="chart"></canvas>
+        </div>
+
+        <div class="footer">
+            <a href="https://github.com/mahdi-nasehiyan/the-actual-cpi-in-iran">GitHub</a>
+            &middot; Data from <a href="https://torob.com">Torob</a>
+            &middot; <a href="../data/prices.csv" download>Download raw data</a>
+        </div>
+    </div>
+
+    <script>
+        // ── State ──
+        let allRows = [];
+        let meta = null;
+        let chart = null;
+        let categories = { l1: new Set(), l2: {}, l3: {} };
+
+        // ── Load ──
+        async function load() {
+            const [csvText, metaJson] = await Promise.all([
+                fetch('../data/prices.csv').then(r => r.text()),
+                fetch('../data/metadata.json').then(r => r.json()),
+            ]);
+            meta = metaJson;
+            renderMeta();
+
+            const parsed = Papa.parse(csvText, { header: true, dynamicTyping: true });
+            allRows = parsed.data.filter(r => r.date && r.price != null);
+
+            // Build category index
+            for (const r of allRows) {
+                categories.l1.add(r.cat_level_1);
+                if (!categories.l2[r.cat_level_1]) categories.l2[r.cat_level_1] = new Set();
+                if (r.cat_level_2) categories.l2[r.cat_level_1].add(r.cat_level_2);
+                const l2k = `${r.cat_level_1}||${r.cat_level_2}`;
+                if (!categories.l3[l2k]) categories.l3[l2k] = new Set();
+                if (r.cat_level_3) categories.l3[l2k].add(r.cat_level_3);
+            }
+
+            populateL1();
+            populateBase();
+            draw();
+        }
+
+        // ── Meta ──
+        function renderMeta() {
+            const row = document.getElementById('meta-row');
+            row.innerHTML = `
+    <div class="meta-card"><div class="num">${meta.total_price_points.toLocaleString()}</div><div class="label">Price Points</div></div>
+    <div class="meta-card"><div class="num">${meta.num_products}</div><div class="label">Products</div></div>
+    <div class="meta-card"><div class="num">${meta.num_categories.level_1} · ${meta.num_categories.level_2} · ${meta.num_categories.level_3}</div><div class="label">L1 · L2 · L3</div></div>
+    <div class="meta-card"><div class="num">${meta.date_range.jalali.min} → ${meta.date_range.jalali.max}</div><div class="label">Date Range (Jalali)</div></div>
+  `;
+        }
+
+        function populateL1() {
+            const sel = document.getElementById('l1-select');
+            const sorted = [...categories.l1].sort();
+            sel.innerHTML = `<option value="__all__">همه</option>` + sorted.map(c => `<option value="${c}">${c}</option>`).join('');
+            sel.addEventListener('change', () => { populateL2(); draw(); });
+            populateL2();
+        }
+
+        function populateL2() {
+            const l1 = document.getElementById('l1-select').value;
+            const sel = document.getElementById('l2-select');
+            const items = categories.l2[l1] || new Set();
+            const sorted = [...items].sort();
+            sel.innerHTML = `<option value="__all__">همه</option>` + sorted.map(c => `<option value="${c}">${c}</option>`).join('');
+            sel.addEventListener('change', () => { populateL3(); draw(); });
+            populateL3();
+        }
+
+        function populateL3() {
+            const l1 = document.getElementById('l1-select').value;
+            const l2 = document.getElementById('l2-select').value;
+            const sel = document.getElementById('l3-select');
+            const key = `${l1}||${l2}`;
+            const items = categories.l3[key] || new Set();
+            const sorted = [...items].sort();
+            sel.innerHTML = `<option value="__all__">همه</option>` + sorted.map(c => `<option value="${c}">${c}</option>`).join('');
+            sel.addEventListener('change', draw);
+        }
+
+        function populateBase() {
+            const months = new Set();
+            for (const r of allRows) {
+                const d = parseJalali(r.date);
+                if (d) months.add(d.ym);
+            }
+            const sorted = [...months].sort();
+            const sel = document.getElementById('base-select');
+            sel.innerHTML = sorted.map(m => `<option value="${m}">${m}</option>`).join('');
+            sel.value = sorted[0];333333333
+            sel.addEventListener('change', draw);
+        }
+
+        // ── Date ──
+        function parseJalali(s) {
+            if (!s) return null;
+            const [y, m, d] = s.split('-').map(Number);
+            return { year: y, month: m, ym: `${y}-${String(m).padStart(2, '0')}` };
+        }
+
+        // ── Aggregate ──
+        function aggregate(level, filterL1, filterL2, filterL3, baseYm) {
+            // Filter rows
+            let filtered = allRows.filter(r => {
+                const d = parseJalali(r.date);
+                return d && d.ym >= baseYm;
+            });
+            if (filterL1 && filterL1 !== '__all__') filtered = filtered.filter(r => r.cat_level_1 === filterL1);
+            if (filterL2 && filterL2 !== '__all__') filtered = filtered.filter(r => r.cat_level_2 === filterL2);
+            if (filterL3 && filterL3 !== '__all__') filtered = filtered.filter(r => r.cat_level_3 === filterL3);
+
+
+            // Determine grouping field
+            let groupField;
+            if (filterL3 && filterL3 !== '__all__') groupField = 'product_title';
+            else if (filterL2 && filterL2 !== '__all__') groupField = 'cat_level_3';
+            else if (filterL1 && filterL1 !== '__all__') groupField = 'cat_level_2';
+            else groupField = 'cat_level_1';
+
+            // Group
+            const groups = {};
+            for (const r of filtered) {
+                const d = parseJalali(r.date);
+                if (!d) continue;
+                const cat = r[groupField] || 'unknown';
+                const key = `${cat}||${d.ym}`;
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(r.price);
+            }
+
+            // Median + normalize
+            const seriesMap = {};
+            for (const [key, prices] of Object.entries(groups)) {
+                const [cat, ym] = key.split('||');
+                prices.sort((a, b) => a - b);
+                const mid = Math.floor(prices.length / 2);
+                const median = prices.length % 2 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
+                if (!seriesMap[cat]) seriesMap[cat] = [];
+                seriesMap[cat].push({ ym, median });
+            }
+
+            const months = [...new Set(filtered.map(r => parseJalali(r.date)).filter(Boolean).map(d => d.ym))].sort();
+            const series = [];
+            for (const [cat, points] of Object.entries(seriesMap)) {
+                points.sort((a, b) => a.ym.localeCompare(b.ym));
+                const base = points[0]?.median;
+                if (!base) continue;
+                series.push({
+                    label: cat,
+                    data: points.map(p => ({ x: p.ym, y: Math.round((p.median / base) * 10000) / 100 })),
+                });
+            }
+
+            return { series, months };
+        }
+
+        // ── Overall index ──
+        function overallIndex(baseYm) {
+            const filtered = allRows.filter(r => {
+                const d = parseJalali(r.date);
+                return d && d.ym >= baseYm;
+            });
+
+            // Group by product, get their individual normalized series
+            const productSeries = {};
+            for (const r of filtered) {
+                const d = parseJalali(r.date);
+                if (!d) continue;
+                if (!productSeries[r.product_title]) productSeries[r.product_title] = [];
+                productSeries[r.product_title].push({ ym: d.ym, price: r.price });
+            }
+
+            // Normalize each product to its own first month = 100
+            const normalizedByMonth = {};
+            for (const [product, points] of Object.entries(productSeries)) {
+                points.sort((a, b) => a.ym.localeCompare(b.ym));
+                const basePrice = points[0].price;
+                if (!basePrice) continue;
+                for (const p of points) {
+                    if (!normalizedByMonth[p.ym]) normalizedByMonth[p.ym] = [];
+                    normalizedByMonth[p.ym].push((p.price / basePrice) * 100);
+                }
+            }
+
+            // Median of normalized values per month
+            const months = Object.keys(normalizedByMonth).sort();
+            return {
+                label: 'Overall Index',
+                data: months.map(ym => {
+                    const vals = normalizedByMonth[ym].sort((a, b) => a - b);
+                    const mid = Math.floor(vals.length / 2);
+                    const median = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+                    return { x: ym, y: Math.round(median * 100) / 100 };
+                }),
+                borderColor: '#1a1a1a',
+                borderDash: [6, 4],
+                borderWidth: 2,
+                pointRadius: 0,
+            };
+        }
+
+
+        // ── Draw ──
+        function draw() {
+            const l1 = document.getElementById('l1-select').value;
+            const l2 = document.getElementById('l2-select').value;
+            const l3 = document.getElementById('l3-select').value;
+            const baseYm = document.getElementById('base-select').value;
+            const showOverall = document.getElementById('show-overall').checked;
+
+            const { series, months } = aggregate('auto', l1, l2, l3, baseYm);
+
+            const palette = ['#c0392b', '#2c6e49', '#2c3e50', '#d4a017', '#8e44ad', '#2980b9', '#e67e22', '#16a085', '#7f8c8d', '#c0392b'];
+            const datasets = series.map((s, i) => ({
+                label: s.label,
+                data: s.data,
+                borderColor: palette[i % palette.length],
+                backgroundColor: palette[i % palette.length] + '18',
+                tension: 0.25,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                borderWidth: 2.5,
+                fill: false,
+            }));
+
+            if (showOverall) {
+                const overall = overallIndex(baseYm);
+                if (overall) datasets.unshift(overall);
+            }
+
+            const ctx = document.getElementById('chart').getContext('2d');
+            if (chart) chart.destroy();
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 14,
+                                padding: 18,
+                                font: { size: 12, family: "'Vazirmatn', 'Inter', sans-serif" },
+                                usePointStyle: true,
+                            },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`,
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            labels: months,
+                            title: { display: true, text: 'Month (Jalali)', font: { size: 12 } },
+                            ticks: { maxRotation: 40, font: { size: 11 } },
+                            grid: { display: false },
+                        },
+                        y: {
+                            title: { display: true, text: 'Index (base = 100)', font: { size: 12 } },
+                            beginAtZero: false,
+                            grid: { color: '#f0ede8' },
+                            ticks: { font: { size: 11 } },
+                        },
+                    },
+                    interaction: { mode: 'index', intersect: false },
+                },
+            });
+        }
+
+        // ── Events ──
+        document.getElementById('l1-select').addEventListener('change', draw);
+        document.getElementById('l2-select').addEventListener('change', draw);
+        document.getElementById('l3-select').addEventListener('change', draw);
+        document.getElementById('show-overall').addEventListener('change', draw);
+        document.getElementById('base-select').addEventListener('change', draw);
+
+        // ── Start ──
+        load();
+    </script>
+</body>
+
+</html>
