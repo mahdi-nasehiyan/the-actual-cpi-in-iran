@@ -1,11 +1,9 @@
 import pandas as pd
-import numpy as np
+import gc
 
 df = pd.read_csv('data/prices.csv')
 
-# ── 1. Extract ym from jdatetime objects ──
 def extract_ym(d):
-    """Handle jdatetime.date, jdatetime.datetime, or string."""
     if hasattr(d, 'year') and hasattr(d, 'month'):
         return f"{d.year}-{d.month:02d}"
     s = str(d).strip()
@@ -16,70 +14,72 @@ def extract_ym(d):
         return f"{parts[0]}-{parts[1].zfill(2)}"
     return None
 
+# ── 1. Prep ──
 df['ym'] = df['date'].apply(extract_ym)
+df['cat_level_2'] = df['cat_level_2'].fillna('__no_l2__')
+df['cat_level_3'] = df['cat_level_3'].fillna('__no_l3__')
 
-# ── 2. Monthly median per product ──
+# ── 2. Monthly median per product (still cheap) ──
 monthly = (
     df.groupby(['product_title', 'cat_level_1', 'cat_level_2', 'cat_level_3', 'ym'])['price']
     .median()
     .reset_index()
 )
 
-# ── 3. Pivot to wide panel ──
-panel = monthly.pivot_table(
-    index=['product_title', 'cat_level_1', 'cat_level_2', 'cat_level_3'],
-    columns='ym',
-    values='price'
-)
+# ── 3. Process one L3 category at a time ──
+base_month = '1404-01'
+records = []
 
-# ── 4. Forward-fill then interpolate gaps ──
-panel = panel.ffill(axis=1).interpolate(axis=1, limit_direction='both')
+# Group by L3 category keys once
+cat_keys = monthly.groupby(['cat_level_1', 'cat_level_2', 'cat_level_3'])
 
-# ── 5. Matched-sample index ──
-def matched_index(panel_slice, base_month, min_n=3):
-    if base_month not in panel_slice.columns:
-        return {}
+for (l1, l2, l3), group in cat_keys:
+    # Pivot ONLY this category's products (tiny table, not the full dataset)
+    panel = group.pivot_table(
+        index='product_title',
+        columns='ym',
+        values='price',
+        dropna=False,
+    )
     
-    base = panel_slice[base_month].dropna()
-    out = {}
+    # Fill gaps
+    panel = panel.ffill(axis=1).interpolate(axis=1, limit_direction='both')
     
-    for month in panel_slice.columns:
-        valid = panel_slice[month].notna() & base.notna()
+    # Matched-sample
+    if base_month not in panel.columns:
+        continue
+    
+    base = panel[base_month].dropna()
+    if base.empty:
+        continue
+    
+    for month in panel.columns:
+        valid = panel[month].notna() & base.notna()
         n = valid.sum()
-        if n < min_n:
+        if n < 3:
             continue
-        relatives = panel_slice.loc[valid, month] / base[valid]
-        out[month] = {
+        relatives = panel.loc[valid, month] / base[valid]
+        records.append({
+            'cat_level_1': l1,
+            'cat_level_2': l2,
+            'cat_level_3': l3,
+            'ym': month,
             'median': round(float(relatives.median()), 4),
             'mean': round(float(relatives.mean()), 4),
             'n': int(n),
             'q25': round(float(relatives.quantile(0.25)), 4),
             'q75': round(float(relatives.quantile(0.75)), 4),
-        }
-    return out
-
-# ── 6. Compute per L3 category ──
-#    Keep cat_level_1, cat_level_2, cat_level_3 as separate columns
-base_month = '1404-01'
-records = []
-
-for (l1, l2, l3), group in panel.groupby(level=[1, 2, 3]):
-    idx = matched_index(group.droplevel([1, 2, 3]), base_month)
-    for ym, vals in idx.items():
-        records.append({
-            'cat_level_1': l1,
-            'cat_level_2': l2,
-            'cat_level_3': l3,
-            'ym': ym,
-            **vals
         })
+    
+    # Explicitly delete and GC before next iteration
+    del panel, group, base, valid, relatives
+    gc.collect()
 
+# ── 4. Output ──
 out_df = pd.DataFrame(records)
-
-# Add percentage columns for easier plotting
 out_df['median_pct'] = out_df['median'] * 100
 out_df['q25_pct'] = out_df['q25'] * 100
 out_df['q75_pct'] = out_df['q75'] * 100
 
 out_df.to_csv('data/cpi_indices.csv', index=False)
-print(f"Wrote {len(out_df)} rows with columns: {list(out_df.columns)}")
+print(f"Wrote {len(out_df)} rows, L1s: {out_df['cat_level_1'].nunique()}")
