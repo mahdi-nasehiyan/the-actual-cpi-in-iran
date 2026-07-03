@@ -43,7 +43,6 @@
             margin: 0 auto;
         }
 
-        /* ── Header ── */
         .header {
             margin-bottom: 24px;
         }
@@ -62,7 +61,6 @@
             margin-top: 2px;
         }
 
-        /* ── Meta row ── */
         .meta-row {
             display: flex;
             gap: 8px;
@@ -94,7 +92,6 @@
             margin-top: 2px;
         }
 
-        /* ── Controls ── */
         .controls {
             background: var(--card);
             border-radius: var(--radius);
@@ -149,7 +146,6 @@
             cursor: pointer;
         }
 
-        /* ── Chart ── */
         .chart-wrap {
             background: var(--card);
             border-radius: var(--radius);
@@ -159,10 +155,9 @@
 
         .chart-wrap canvas {
             width: 100%;
-            height: 480px;
+            height: 520px;
         }
 
-        /* ── Footer ── */
         .footer {
             margin-top: 20px;
             font-size: 12px;
@@ -186,7 +181,7 @@
     <div class="container">
         <div class="header">
             <h1>نماگر قیمت مصرف‌کننده در ایران</h1>
-            <div class="subtitle">The Actual CPI in Iran — real price movements from Torob data</div>
+            <div class="subtitle">The Actual CPI in Iran — matched-sample indices from Torob data</div>
         </div>
 
         <div class="meta-row" id="meta-row"></div>
@@ -212,8 +207,12 @@
             </div>
             <div style="flex:1"></div>
             <div class="checkbox-group">
+                <input type="checkbox" id="show-bands">
+                <label for="show-bands">Show IQR bands</label>
+            </div>
+            <div class="checkbox-group">
                 <input type="checkbox" id="show-overall" checked>
-                <label for="show-overall">Show overall index</label>
+                <label for="show-overall">Show overall</label>
             </div>
             <div class="control-group">
                 <label>Base</label>
@@ -228,30 +227,32 @@
         <div class="footer">
             <a href="https://github.com/mahdi-nasehiyan/the-actual-cpi-in-iran">GitHub</a>
             &middot; Data from <a href="https://torob.com">Torob</a>
-            &middot; <a href="../data/prices.csv" download>Download raw data</a>
+            &middot; <a href="../data/cpi_indices.csv" download>Download index data</a>
         </div>
     </div>
 
     <script>
-        // ── State ──
         let allRows = [];
-        let meta = null;
         let chart = null;
         let categories = { l1: new Set(), l2: {}, l3: {} };
 
-        // ── Load ──
+        const PALETTE = [
+            '#c0392b', '#2c6e49', '#2c3e50', '#d4a017', '#8e44ad',
+            '#2980b9', '#e67e22', '#16a085', '#7f8c8d', '#c0392b'
+        ];
+
         async function load() {
-            const [csvText, metaJson] = await Promise.all([
-                fetch('../data/prices.csv').then(r => r.text()),
-                fetch('../data/metadata.json').then(r => r.json()),
-            ]);
-            meta = metaJson;
-            renderMeta();
-
+            const csvText = await fetch('../data/cpi_indices.csv').then(r => r.text());
             const parsed = Papa.parse(csvText, { header: true, dynamicTyping: true });
-            allRows = parsed.data.filter(r => r.date && r.price != null);
+            allRows = parsed.data.filter(r => r.ym && r.median != null);
 
-            // Build category index
+            for (const r of allRows) {
+                const m = +r.median;
+                r.median_pct = (m < 10) ? m * 100 : m;
+                r.q25_pct = (r.q25 != null && +r.q25 < 10) ? r.q25 * 100 : (+r.q25 || r.median_pct);
+                r.q75_pct = (r.q75 != null && +r.q75 < 10) ? r.q75 * 100 : (+r.q75 || r.median_pct);
+            }
+
             for (const r of allRows) {
                 categories.l1.add(r.cat_level_1);
                 if (!categories.l2[r.cat_level_1]) categories.l2[r.cat_level_1] = new Set();
@@ -261,27 +262,35 @@
                 if (r.cat_level_3) categories.l3[l2k].add(r.cat_level_3);
             }
 
+            renderMeta();
             populateL1();
             populateBase();
             draw();
         }
 
-        // ── Meta ──
         function renderMeta() {
+            const l1n = categories.l1.size;
+            const l2n = new Set(allRows.map(r => r.cat_level_2)).size;
+            const l3n = new Set(allRows.map(r => r.cat_level_3)).size;
+            const yms = allRows.map(r => r.ym).sort();
+            const minYm = yms[0];
+            const maxYm = yms[yms.length - 1];
+            const avgN = Math.round(allRows.reduce((s, r) => s + (r.n || 0), 0) / allRows.length);
+
             const row = document.getElementById('meta-row');
             row.innerHTML = `
-    <div class="meta-card"><div class="num">${meta.total_price_points.toLocaleString()}</div><div class="label">Price Points</div></div>
-    <div class="meta-card"><div class="num">${meta.num_products}</div><div class="label">Products</div></div>
-    <div class="meta-card"><div class="num">${meta.num_categories.level_1} · ${meta.num_categories.level_2} · ${meta.num_categories.level_3}</div><div class="label">L1 · L2 · L3</div></div>
-    <div class="meta-card"><div class="num">${meta.date_range.jalali.min} → ${meta.date_range.jalali.max}</div><div class="label">Date Range (Jalali)</div></div>
-  `;
+                <div class="meta-card"><div class="num">${l1n} · ${l2n} · ${l3n}</div><div class="label">L1 · L2 · L3 Categories</div></div>
+                <div class="meta-card"><div class="num">${allRows.length.toLocaleString()}</div><div class="label">Index Rows</div></div>
+                <div class="meta-card"><div class="num">${minYm} → ${maxYm}</div><div class="label">Date Range (Jalali)</div></div>
+                <div class="meta-card"><div class="num">${avgN}</div><div class="label">Avg Sample Size</div></div>
+            `;
         }
 
         function populateL1() {
             const sel = document.getElementById('l1-select');
             const sorted = [...categories.l1].sort();
             sel.innerHTML = `<option value="__all__">همه</option>` + sorted.map(c => `<option value="${c}">${c}</option>`).join('');
-            sel.addEventListener('change', () => { populateL2(); draw(); });
+            sel.addEventListener('change', () => { populateL2(); populateL3(); draw(); });
             populateL2();
         }
 
@@ -307,153 +316,149 @@
         }
 
         function populateBase() {
-            const months = new Set();
-            for (const r of allRows) {
-                const d = parseJalali(r.date);
-                if (d) months.add(d.ym);
-            }
-            const sorted = [...months].sort();
+            const yms = [...new Set(allRows.map(r => r.ym))].sort();
             const sel = document.getElementById('base-select');
-            sel.innerHTML = sorted.map(m => `<option value="${m}">${m}</option>`).join('');
-            sel.value = sorted[0];333333333
+            sel.innerHTML = yms.map(m => `<option value="${m}">${m}</option>`).join('');
+            sel.value = yms[0];
             sel.addEventListener('change', draw);
         }
 
-        // ── Date ──
-        function parseJalali(s) {
-            if (!s) return null;
-            const [y, m, d] = s.split('-').map(Number);
-            return { year: y, month: m, ym: `${y}-${String(m).padStart(2, '0')}` };
+        function median(arr) {
+            const s = [...arr].sort((a, b) => a - b);
+            const mid = Math.floor(s.length / 2);
+            return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
         }
 
-        // ── Aggregate ──
-        function aggregate(level, filterL1, filterL2, filterL3, baseYm) {
-            // Filter rows
-            let filtered = allRows.filter(r => {
-                const d = parseJalali(r.date);
-                return d && d.ym >= baseYm;
-            });
-            if (filterL1 && filterL1 !== '__all__') filtered = filtered.filter(r => r.cat_level_1 === filterL1);
-            if (filterL2 && filterL2 !== '__all__') filtered = filtered.filter(r => r.cat_level_2 === filterL2);
-            if (filterL3 && filterL3 !== '__all__') filtered = filtered.filter(r => r.cat_level_3 === filterL3);
-
-
-            // Determine grouping field
-            let groupField;
-            if (filterL3 && filterL3 !== '__all__') groupField = 'product_title';
-            else if (filterL2 && filterL2 !== '__all__') groupField = 'cat_level_3';
-            else if (filterL1 && filterL1 !== '__all__') groupField = 'cat_level_2';
-            else groupField = 'cat_level_1';
-
-            // Group
-            const groups = {};
-            for (const r of filtered) {
-                const d = parseJalali(r.date);
-                if (!d) continue;
-                const cat = r[groupField] || 'unknown';
-                const key = `${cat}||${d.ym}`;
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(r.price);
-            }
-
-            // Median + normalize
-            const seriesMap = {};
-            for (const [key, prices] of Object.entries(groups)) {
-                const [cat, ym] = key.split('||');
-                prices.sort((a, b) => a - b);
-                const mid = Math.floor(prices.length / 2);
-                const median = prices.length % 2 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
-                if (!seriesMap[cat]) seriesMap[cat] = [];
-                seriesMap[cat].push({ ym, median });
-            }
-
-            const months = [...new Set(filtered.map(r => parseJalali(r.date)).filter(Boolean).map(d => d.ym))].sort();
-            const series = [];
-            for (const [cat, points] of Object.entries(seriesMap)) {
-                points.sort((a, b) => a.ym.localeCompare(b.ym));
-                const base = points[0]?.median;
-                if (!base) continue;
-                series.push({
-                    label: cat,
-                    data: points.map(p => ({ x: p.ym, y: Math.round((p.median / base) * 10000) / 100 })),
-                });
-            }
-
-            return { series, months };
+        function rebaseWithBands(pts, baseYm) {
+            const base = pts.find(p => p.x === baseYm);
+            if (!base) return [];
+            const baseMed = base.y;
+            return pts.map(p => ({
+                x: p.x,
+                y: Math.round((p.y / baseMed) * 10000) / 100,
+                q25: Math.round((p.q25 / baseMed) * 10000) / 100,
+                q75: Math.round((p.q75 / baseMed) * 10000) / 100,
+                n: p.n
+            }));
         }
 
-        // ── Overall index ──
-        function overallIndex(baseYm) {
-            const filtered = allRows.filter(r => {
-                const d = parseJalali(r.date);
-                return d && d.ym >= baseYm;
-            });
-
-            // Group by product, get their individual normalized series
-            const productSeries = {};
-            for (const r of filtered) {
-                const d = parseJalali(r.date);
-                if (!d) continue;
-                if (!productSeries[r.product_title]) productSeries[r.product_title] = [];
-                productSeries[r.product_title].push({ ym: d.ym, price: r.price });
-            }
-
-            // Normalize each product to its own first month = 100
-            const normalizedByMonth = {};
-            for (const [product, points] of Object.entries(productSeries)) {
-                points.sort((a, b) => a.ym.localeCompare(b.ym));
-                const basePrice = points[0].price;
-                if (!basePrice) continue;
-                for (const p of points) {
-                    if (!normalizedByMonth[p.ym]) normalizedByMonth[p.ym] = [];
-                    normalizedByMonth[p.ym].push((p.price / basePrice) * 100);
-                }
-            }
-
-            // Median of normalized values per month
-            const months = Object.keys(normalizedByMonth).sort();
-            return {
-                label: 'Overall Index',
-                data: months.map(ym => {
-                    const vals = normalizedByMonth[ym].sort((a, b) => a - b);
-                    const mid = Math.floor(vals.length / 2);
-                    const median = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-                    return { x: ym, y: Math.round(median * 100) / 100 };
-                }),
-                borderColor: '#1a1a1a',
-                borderDash: [6, 4],
-                borderWidth: 2,
-                pointRadius: 0,
-            };
-        }
-
-
-        // ── Draw ──
         function draw() {
             const l1 = document.getElementById('l1-select').value;
             const l2 = document.getElementById('l2-select').value;
             const l3 = document.getElementById('l3-select').value;
             const baseYm = document.getElementById('base-select').value;
             const showOverall = document.getElementById('show-overall').checked;
+            const showBands = document.getElementById('show-bands').checked;
 
-            const { series, months } = aggregate('auto', l1, l2, l3, baseYm);
+            let filtered = allRows;
+            if (l1 !== '__all__') filtered = filtered.filter(r => r.cat_level_1 === l1);
+            if (l2 !== '__all__') filtered = filtered.filter(r => r.cat_level_2 === l2);
+            if (l3 !== '__all__') filtered = filtered.filter(r => r.cat_level_3 === l3);
 
-            const palette = ['#c0392b', '#2c6e49', '#2c3e50', '#d4a017', '#8e44ad', '#2980b9', '#e67e22', '#16a085', '#7f8c8d', '#c0392b'];
-            const datasets = series.map((s, i) => ({
-                label: s.label,
-                data: s.data,
-                borderColor: palette[i % palette.length],
-                backgroundColor: palette[i % palette.length] + '18',
-                tension: 0.25,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                borderWidth: 2.5,
-                fill: false,
-            }));
+            let groupField;
+            if (l3 !== '__all__') groupField = 'cat_level_3';
+            else if (l2 !== '__all__') groupField = 'cat_level_3';
+            else if (l1 !== '__all__') groupField = 'cat_level_2';
+            else groupField = 'cat_level_1';
 
-            if (showOverall) {
-                const overall = overallIndex(baseYm);
-                if (overall) datasets.unshift(overall);
+            const groups = {};
+            for (const r of filtered) {
+                const key = r[groupField];
+                if (!groups[key]) groups[key] = {};
+                if (!groups[key][r.ym]) groups[key][r.ym] = [];
+                groups[key][r.ym].push({ y: r.median_pct, q25: r.q25_pct, q75: r.q75_pct, n: r.n || 0 });
+            }
+
+            // ── FIX: only months from base onwards ──
+            const months = [...new Set(filtered.map(r => r.ym))].sort().filter(m => m >= baseYm);
+
+            const datasets = [];
+
+            for (const [key, monthMap] of Object.entries(groups)) {
+                const pts = [];
+                for (const month of months) {
+                    const arr = monthMap[month];
+                    if (!arr) continue;
+                    pts.push({
+                        x: month,
+                        y: median(arr.map(p => p.y)),
+                        q25: median(arr.map(p => p.q25)),
+                        q75: median(arr.map(p => p.q75)),
+                        n: arr.reduce((s, p) => s + p.n, 0)
+                    });
+                }
+                if (!pts.length) continue;
+
+                const rebased = rebaseWithBands(pts, baseYm);
+                if (!rebased.length) continue;
+
+                const color = PALETTE[datasets.length % PALETTE.length];
+
+                if (showBands) {
+                    datasets.push({
+                        label: `${key}__q25`,
+                        data: rebased.map(p => ({ x: p.x, y: p.q25 })),
+                        borderColor: 'transparent',
+                        backgroundColor: color + '18',
+                        pointRadius: 0,
+                        fill: false,
+                        order: 2,
+                        _parentLabel: key,
+                    });
+                    datasets.push({
+                        label: `${key}__q75`,
+                        data: rebased.map(p => ({ x: p.x, y: p.q75 })),
+                        borderColor: 'transparent',
+                        backgroundColor: color + '18',
+                        pointRadius: 0,
+                        fill: '-1',
+                        order: 1,
+                        _parentLabel: key,
+                    });
+                }
+
+                datasets.push({
+                    label: key,
+                    data: rebased.map(p => ({ x: p.x, y: p.y, n: p.n })),
+                    borderColor: color,
+                    backgroundColor: color,
+                    tension: 0.25,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2.5,
+                    fill: false,
+                    order: 0,
+                    _parentLabel: key,
+                });
+            }
+
+            if (showOverall && datasets.length > 0) {
+                const byMonth = {};
+                for (const ds of datasets) {
+                    if (ds.label.includes('__')) continue;
+                    for (const p of ds.data) {
+                        if (!byMonth[p.x]) byMonth[p.x] = [];
+                        byMonth[p.x].push(p.y);
+                    }
+                }
+                const overallPts = Object.keys(byMonth).sort().map(ym => {
+                    const vals = byMonth[ym];
+                    return { x: ym, y: Math.round(median(vals) * 100) / 100 };
+                });
+                const rebasedOverall = rebaseWithBands(overallPts, baseYm);
+                if (rebasedOverall.length) {
+                    datasets.unshift({
+                        label: 'Overall Index',
+                        data: rebasedOverall,
+                        borderColor: '#1a1a1a',
+                        borderDash: [6, 4],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        order: -1,
+                        _parentLabel: 'Overall Index',
+                    });
+                }
             }
 
             const ctx = document.getElementById('chart').getContext('2d');
@@ -474,11 +479,27 @@
                                 padding: 18,
                                 font: { size: 12, family: "'Vazirmatn', 'Inter', sans-serif" },
                                 usePointStyle: true,
+                                filter: (item) => !item.text.includes('__'),
+                            },
+                            onClick: (e, legendItem, legend) => {
+                                const ci = legend.chart;
+                                const clickedLabel = legendItem.text;
+                                ci.data.datasets.forEach((ds, i) => {
+                                    if (ds._parentLabel === clickedLabel) {
+                                        const meta = ci.getDatasetMeta(i);
+                                        meta.hidden = meta.hidden === null ? !ci.data.datasets[i].hidden : null;
+                                    }
+                                });
+                                ci.update();
                             },
                         },
                         tooltip: {
                             callbacks: {
-                                label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`,
+                                label: (ctx) => {
+                                    const pt = ctx.raw;
+                                    const n = pt.n ? ` (n=${pt.n})` : '';
+                                    return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}${n}`;
+                                },
                             },
                         },
                     },
@@ -502,14 +523,9 @@
             });
         }
 
-        // ── Events ──
-        document.getElementById('l1-select').addEventListener('change', draw);
-        document.getElementById('l2-select').addEventListener('change', draw);
-        document.getElementById('l3-select').addEventListener('change', draw);
+        document.getElementById('show-bands').addEventListener('change', draw);
         document.getElementById('show-overall').addEventListener('change', draw);
-        document.getElementById('base-select').addEventListener('change', draw);
 
-        // ── Start ──
         load();
     </script>
 </body>
